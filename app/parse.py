@@ -1,19 +1,21 @@
 import csv
 import time
 from dataclasses import dataclass, fields
+from typing import List, Dict
+from urllib.parse import urljoin
 
 from selenium import webdriver
 from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 
-BASE_URL = "https://webscraper.io/test-sites"
+BASE_URL = "https://webscraper.io/test-sites/"
 PAGE_URLS = {
-    "home": BASE_URL + "/e-commerce/more/",
-    "computers": BASE_URL + "/e-commerce/more/computers",
-    "laptops": BASE_URL + "/e-commerce/more/computers/laptops",
-    "tablets": BASE_URL + "/e-commerce/more/computers/tablets",
-    "phones": BASE_URL + "/e-commerce/more/phones",
-    "touch": BASE_URL + "/e-commerce/more/phones/touch",
+    "home": urljoin(BASE_URL, "e-commerce/more/"),
+    "computers": urljoin(BASE_URL, "e-commerce/more/computers"),
+    "laptops": urljoin(BASE_URL, "e-commerce/more/computers/laptops"),
+    "tablets": urljoin(BASE_URL, "e-commerce/more/computers/tablets"),
+    "phones": urljoin(BASE_URL, "e-commerce/more/phones"),
+    "touch": urljoin(BASE_URL, "e-commerce/more/phones/touch"),
 }
 
 
@@ -29,22 +31,18 @@ class Product:
 PRODUCT_FIELDS = [field.name for field in fields(Product)]
 
 
-def parse_products_on_page(driver, url):
+def parse_products_on_page(driver: webdriver.Chrome, url: str) -> List[Product]:
     driver.get(url)
     accept_cookies_if_asked(driver)
     products = []
     while has_next_page(driver):
         navigate_to_next_page(driver)
-    for product in driver.find_elements(By.CLASS_NAME, "thumbnail"):
-        title = product.find_element(By.CLASS_NAME, "title").get_attribute("title")
-        price = float(
-            product.find_element(By.CLASS_NAME, "price").text.replace("$", "")
-        )
-        description = product.find_element(By.CLASS_NAME, "description").text
-        rating = len(
-            product.find_elements(By.CSS_SELECTOR, "p:nth-of-type(2) > span")
-        )
-        review_count = get_review_count(product)
+    for product_element in driver.find_elements(By.CLASS_NAME, "thumbnail"):
+        title = get_title(product_element)
+        price = get_price(product_element)
+        description = get_description(product_element)
+        rating = get_rating(product_element)
+        review_count = get_review_count(product_element)
         products.append(
             Product(
                 title=title,
@@ -54,11 +52,36 @@ def parse_products_on_page(driver, url):
                 num_of_reviews=review_count,
             )
         )
-
     return products
 
 
-def accept_cookies_if_asked(driver):
+def get_title(product_element: webdriver.Chrome) -> str:
+    return product_element.find_element(By.CLASS_NAME, "title").get_attribute("title")
+
+
+def get_price(product_element: webdriver.Chrome) -> float:
+    price_text = product_element.find_element(By.CLASS_NAME, "price").text
+    return float(price_text.replace("$", ""))
+
+
+def get_description(product_element: webdriver.Chrome) -> str:
+    return product_element.find_element(By.CLASS_NAME, "description").text
+
+
+def get_rating(product_element: webdriver.Chrome) -> int:
+    return len(product_element.find_elements(By.CSS_SELECTOR, "p:nth-of-type(2) > span"))
+
+
+def get_review_count(product: webdriver.Chrome) -> int:
+    try:
+        review_element = product.find_element(By.CLASS_NAME, "review-count")
+        num_of_reviews = int(review_element.text.split()[0])
+    except NoSuchElementException:
+        num_of_reviews = 0
+    return num_of_reviews
+
+
+def accept_cookies_if_asked(driver: webdriver.Chrome) -> None:
     try:
         accept_cookies_button = driver.find_element(
             By.CLASS_NAME, "acceptCookies"
@@ -69,16 +92,7 @@ def accept_cookies_if_asked(driver):
         pass
 
 
-def get_review_count(product):
-    try:
-        review_element = product.find_element(By.CLASS_NAME, "review-count")
-        num_of_reviews = int(review_element.text.split()[0])
-    except NoSuchElementException:
-        num_of_reviews = 0
-    return num_of_reviews
-
-
-def has_next_page(driver):
+def has_next_page(driver: webdriver.Chrome) -> bool:
     try:
         next_button = driver.find_element(
             By.CLASS_NAME, "ecomerce-items-scroll-more"
@@ -88,7 +102,7 @@ def has_next_page(driver):
         return False
 
 
-def navigate_to_next_page(driver):
+def navigate_to_next_page(driver: webdriver.Chrome) -> bool:
     try:
         next_button = driver.find_element(
             By.CLASS_NAME, "ecomerce-items-scroll-more"
@@ -101,7 +115,7 @@ def navigate_to_next_page(driver):
         return False
 
 
-def scrape_products():
+def scrape_products() -> Dict[str, List[Product]]:
     driver = webdriver.Chrome()
     try:
         products_data: dict[str, list[Product]] = {}
@@ -113,7 +127,7 @@ def scrape_products():
     return products_data
 
 
-def write_to_csv(products_data):
+def write_to_csv(products_data: Dict[str, List[Product]]) -> None:
     for page_name, products in products_data.items():
         output_csv_path = f"{page_name}.csv"
         with open(
@@ -136,7 +150,7 @@ def write_to_csv(products_data):
                 )
 
 
-def get_all_products():
+def get_all_products() -> None:
     products_data = scrape_products()
     write_to_csv(products_data)
 
